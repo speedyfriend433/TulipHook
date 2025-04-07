@@ -16,6 +16,10 @@ namespace tulip::hook {
 		std::vector<void*> m_functions;
 	};
 
+	struct WrapperContent {
+		std::vector<void*> m_functions;
+	};
+
 	class Handler final {
 	public:
 		Handler(void* address, HandlerMetadata const& metadata);
@@ -58,6 +62,10 @@ namespace tulip::hook {
 		static void incrementIndex(HandlerContent* content);
 		static void decrementIndex();
 		static void* getNextFunction(HandlerContent* content);
+
+		static void incrementWrapperIndex(WrapperContent* content);
+		static void decrementWrapperIndex();
+		static void* getNextWrapperFunction(WrapperContent* content);
 
 		static void* popData();
 		static void pushData(void* data);

@@ -23,17 +23,15 @@ geode::Result<std::unique_ptr<Handler>> Handler::create(void* address, HandlerMe
 		return geode::Err("Failed to allocate HandlerContent");
 	}
 
-	GEODE_UNWRAP_INTO(ret->m_handler, Target::get().allocateArea(0x300));
-	GEODE_UNWRAP_INTO(ret->m_trampoline, Target::get().allocateArea(0x100));
-
+	GEODE_UNWRAP_INTO(ret->m_handler, Target::get().allocateWritableArea(0x300));
+	GEODE_UNWRAP_INTO(ret->m_trampoline, Target::get().allocateWritableArea(0x100));
+	
 	return geode::Ok(std::move(ret));
 }
 
 Handler::~Handler() {}
 
 geode::Result<> Handler::init() {
-	// printf("func addr: 0x%" PRIx64 "\n", (uint64_t)m_address);
-
 	auto generator =
 		Target::get().getHandlerGenerator(m_address, m_trampoline, m_handler, m_content, m_metadata);
 
@@ -41,7 +39,6 @@ geode::Result<> Handler::init() {
 	m_handlerSize = handler.m_size;
 
 	GEODE_UNWRAP_INTO(auto minIntervener, generator->generateIntervener(0));
-
 	GEODE_UNWRAP_INTO(auto trampoline, generator->generateTrampoline(minIntervener.size()));
 	m_trampolineSize = trampoline.m_trampoline.m_size;
 
@@ -53,6 +50,13 @@ geode::Result<> Handler::init() {
 	m_originalBytes.insert(m_originalBytes.begin(), address, address + target);
 
 	this->addOriginal();
+
+	if (!Target::get().makeMemoryExecutable(m_handler, 0x300)) {
+		return geode::Err("Failed to mark handler executable");
+	}
+	if (!Target::get().makeMemoryExecutable(m_trampoline, 0x100)) {
+		return geode::Err("Failed to mark trampoline executable");
+	}
 
 	return geode::Ok();
 }
@@ -137,7 +141,6 @@ static thread_local std::stack<void*> s_dataStack;
 
 void Handler::incrementIndex(HandlerContent* content) {
 	if (s_addressStack.size() == 0 || s_addressStack.top() != content) {
-		// new entry
 		s_addressStack.push(content);
 		s_indexStack.push(0);
 	}
@@ -170,4 +173,31 @@ void* Handler::popData() {
 
 void Handler::pushData(void* data) {
 	s_dataStack.push(data);
+}
+
+static thread_local std::stack<size_t> s_wrapperIndexStack;
+static thread_local std::stack<WrapperContent*> s_wrapperContentStack;
+
+void Handler::incrementWrapperIndex(WrapperContent* content) {
+	if (s_wrapperContentStack.empty() || s_wrapperContentStack.top() != content) {
+		s_wrapperContentStack.push(content);
+		s_wrapperIndexStack.push(0);
+	} else {
+		++s_wrapperIndexStack.top();
+	}
+}
+
+void Handler::decrementWrapperIndex() {
+	if (s_wrapperIndexStack.top() == 0) {
+		s_wrapperContentStack.pop();
+		s_wrapperIndexStack.pop();
+	} else {
+		--s_wrapperIndexStack.top();
+	}
+}
+
+void* Handler::getNextWrapperFunction(WrapperContent* content) {
+	auto& vec = content->m_functions;
+	auto ret = vec[s_wrapperIndexStack.top() % vec.size()];
+	return ret;
 }

@@ -33,3 +33,33 @@ std::unique_ptr<WrapperGenerator> MacosM1Target::getWrapperGenerator(void* addre
 }
 
 #endif
+
+
+#include "MacosM1Target.hpp"
+
+#include <sys/mman.h>
+#include <unistd.h>
+
+namespace tulip::hook {
+
+geode::Result<void*> MacosM1Target::allocateWritableArea(size_t size) {
+    size_t pageSize = sysconf(_SC_PAGESIZE);
+    size_t allocSize = (size + pageSize - 1) & ~(pageSize - 1);
+
+    void* addr = mmap(nullptr, allocSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (addr == MAP_FAILED) {
+        return geode::Err("Failed to allocate writable page");
+    }
+    return geode::Ok(addr);
+}
+
+bool MacosM1Target::makeMemoryExecutable(void* address, size_t size) {
+    size_t pageSize = sysconf(_SC_PAGESIZE);
+    uintptr_t pageAddr = reinterpret_cast<uintptr_t>(address) & ~(pageSize - 1);
+    size_t allocSize = (size + pageSize - 1) & ~(pageSize - 1);
+
+    int result = mprotect(reinterpret_cast<void*>(pageAddr), allocSize, PROT_READ | PROT_EXEC);
+    return (result == 0);
+}
+
+}
